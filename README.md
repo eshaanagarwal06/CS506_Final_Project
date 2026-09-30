@@ -1,6 +1,6 @@
 ## Description:
 
-This project will investigate whether the phonetic composition of a spoken sentence can be used to predict the Word Error Rate (WER) of an automatic speech recognition system. We will use a labeled speech dataset such as LibriSpeech, which provides audio clips paired with ground-truth transcripts. Each audio clip will be processed through an ASR model, and the predicted transcript will be compared with the correct transcript to calculate WER.
+Our project will investigate whether the phonetic composition of a spoken sentence can be used to predict the Word Error Rate (WER) of an automatic speech recognition system. We will use labeled speech datasets such as LibriSpeech, which provides audio clips paired with ground-truth transcripts, in addition to our own devised/sources transcripts and associated recorded speeches. Each audio clip will be processed through an ASR model, and the predicted transcript will be compared with the correct transcript to calculate WER.
 
 The ground-truth transcripts will then be converted into phoneme sequences using the CMU Pronouncing Dictionary. From these sequences, we will extract sentence-level features such as phoneme frequencies, vowel and consonant proportions, average phonemes per word, consonant clusters, and selected phoneme combinations.
 
