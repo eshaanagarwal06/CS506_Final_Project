@@ -36,29 +36,56 @@ Rather than predicting whether each individual word is transcribed correctly, we
 
 A secondary goal will be to determine whether certain phonemes or phoneme combinations are associated with higher transcription error rates.
 
-## Data:
+
+## Data Collection:
 
  We plan to use an existing labeled speech dataset such as LibriSpeech, which contains English audio recordings paired with verified ground-truth transcripts. Using an existing speech corpus will allow us to analyze a large and reproducible set of recordings without needing to collect our own audio.
 
 For each audio clip, we will:
-
-Obtain the original audio and its ground-truth transcript.
-
-Process the audio using one or more automatic speech recognition models.
-
-Compare the predicted transcript with the ground-truth transcript.
-
-Calculate the Word Error Rate (WER) for the clip.
-
-Convert the ground-truth transcript into phoneme sequences using the CMU Pronouncing Dictionary (CMUdict).
+- Obtain the original audio and its ground-truth transcript.
+- Process the audio using one or more automatic speech recognition models.
+- Compare the predicted transcript with the ground-truth transcript.
+- Calculate the Word Error Rate (WER) for the clip.
+- Convert the ground-truth transcript into phoneme sequences using the CMU Pronouncing Dictionary (CMUdict).
 
 Word Error Rate will be calculated as:
 
-[
-WER = \frac{S+D+I}{N}
-]
+$$
+WER = \frac{S + D + I}{N}
+$$
 
 where (S) represents substitutions, (D) represents deletions, (I) represents insertions, and (N) is the number of words in the reference transcript.
+
+## Feature Extraction
+
+Each audio clip will be represented using features describing the phonetic composition of its transcript.
+
+### Possible features include:
+
+- Frequency of each phoneme
+- Proportion of vowels and consonants
+- Total number of phonemes
+- Average number of phonemes per word
+- Number of syllables
+- Frequency of consonant clusters
+- Frequency of selected phoneme combinations or bigrams
+- Sentence length
+- Average word length
+
+For example, a sentence containing many occurrences of phonemes such as TH, R, or difficult consonant clusters may have a different transcription error rate from a sentence composed primarily of simpler sound combinations.
+
+## Visualization
+
+Before training models, we will examine how transcription errors vary with different phonetic characteristics.
+
+### Potential visualizations include:
+
+- Distribution of WER across audio clips
+- Average WER for sentences containing different phonemes
+- Correlation between phoneme frequency and WER
+- Heatmaps showing WER associated with different phoneme combinations
+- Relationship between sentence length and WER
+- Comparison of phoneme-related error patterns across ASR models
 
 ## Resources:
   Phonetics Dictionary: https://github.com/cmusphinx/cmudict/blob/master/cmudict.dict
