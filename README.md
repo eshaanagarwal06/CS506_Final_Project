@@ -22,13 +22,15 @@
 
 ## Goals:
   
-  Our goal is to create a software that measures what phonetics a particular transcription model struggles to transcribe accurately, and in measuring multiple models, further come to find a trend of what phonetics are difficult to transcribe on the whole.
+  Our goal is to rate the effectiveness and accuracy of different audio transcription models. We plan to make these ratings on the basis of such metrics as number of missed words, difficulty in accurately transcribing certain phonetics (determined through analysis of missed words), and potentially mixing in such factors as speed of speech and background noise to find how that impacts accuracy. We can use the information collected on certain transcription models to make predictions, based on given text file analysis, how accurately a model would transcribe the spoken delivery of said text file.
 
 ## Data:
 
   - Collect phonetic and word libraries that link phonetics with words
-  - Use SQL or other data management tools to create our own local database from pieces gathered online
+  - Use SQL, Python, or other data management tools to create our own local database from pieces gathered online
   - Analyze trends based on transcription model testing
+  - Data visualization:
+    - Will develop python infrastructure for visualizing and graphing data 
   - Resources:
     - Phonetics Dictionary: https://github.com/cmusphinx/cmudict/blob/master/cmudict.dict
-    - American English Phonetic Inventory (All or most phonetics used in American English): https://phoible.org/inventories/view/2176 
+    - American English Phonetic Inventory (All or most phonetics used in American English): https://phoible.org/inventories/view/2176
