@@ -26,7 +26,7 @@
 
 ## Data:
 
-  - Collect phonetic and word libraries that link phonetics with words
+  - Collect phonetic and word libraries that link phonetics with words (a library of words and their phonetic components)
   - Use SQL, Python, or other data management tools to create our own local database from pieces gathered online
   - Analyze trends based on transcription model testing
   - Data visualization:
