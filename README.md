@@ -30,7 +30,7 @@ We will first perform exploratory analysis to identify relationships between pho
 
 Our main research question is:
 
-Can we predict the Word Error Rate (WER) of an audio clip using features derived from the phoneme composition of its ground-truth transcript?
+Can we predict the Word Error Rate (WER) of an audio clip using features derived from the phoneme composition of its ground-truth transcript?  Success means our model beats a baseline model that predicts the average WER for all clips in the dataset, measured by mean squared error (MSE) or mean absolute error (MAE).
 
 Rather than predicting whether each individual word is transcribed correctly, we will treat each audio clip or sentence as one observation. For every clip, we will calculate the actual WER produced by an ASR system and extract phoneme-based features from the correct transcript. We will then train regression models to predict WER from these features.
 
