@@ -30,7 +30,7 @@ We will first perform exploratory analysis to identify relationships between pho
 
 Our main research question is:
 
-Can we predict the Word Error Rate (WER) of an audio clip using features derived from the phoneme composition of its ground-truth transcript?  Success means our model beats a baseline model that predicts the average WER for all clips in the dataset, measured by mean squared error (MSE) or mean absolute error (MAE).
+Can we predict the Word Error Rate (WER) of an audio clip using features derived from the phoneme composition of its ground-truth transcript?  Success means our model beats a baseline model that predicts the average WER for all training clips in the dataset, measured by mean squared error (MSE) or mean absolute error (MAE).
 
 Rather than predicting whether each individual word is transcribed correctly, we will treat each audio clip or sentence as one observation. For every clip, we will calculate the actual WER produced by an ASR system and extract phoneme-based features from the correct transcript. We will then train regression models to predict WER from these features.
 
@@ -91,6 +91,10 @@ Before training models, we will examine how transcription errors vary with diffe
 - Comparison of phoneme-related error patterns across ASR models
 
 
-## Resources:
-  Phonetics Dictionary: https://github.com/cmusphinx/cmudict/blob/master/cmudict.dict
-  American English Phonetic Inventory (All or most phonemes used in American English): https://phoible.org/inventories/view/2176
+## Resources
+
+- [LibriSpeech ASR Corpus](https://www.openslr.org/12/) – Speech dataset containing audio recordings paired with ground-truth transcripts.
+- [CMU Pronouncing Dictionary (CMUdict)](https://github.com/cmusphinx/cmudict) – English pronunciation dictionary used to convert words into phoneme sequences.
+- [JiWER](https://github.com/jitsi/jiwer) – Python package for calculating Word Error Rate (WER) and other ASR evaluation metrics.
+- [OpenAI Whisper](https://github.com/openai/whisper) – Automatic speech recognition model that can be used to generate predicted transcripts.
+- [Mozilla Common Voice](https://commonvoice.mozilla.org/datasets) – Large crowdsourced speech dataset that could be used as an extension for testing more diverse speakers and accents.
