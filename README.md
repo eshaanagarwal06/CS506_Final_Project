@@ -56,6 +56,9 @@ $$
 
 where (S) represents substitutions, (D) represents deletions, (I) represents insertions, and (N) is the number of words in the reference transcript.
 
+We will get and process this data using the Hugging Face datasets library, which provides a convenient interface for downloading and working with speech datasets.
+
+
 ## Feature Extraction
 
 Each audio clip will be represented using features describing the phonetic composition of its transcript.
@@ -87,7 +90,6 @@ Before training models, we will examine how transcription errors vary with diffe
 - Relationship between sentence length and WER
 - Comparison of phoneme-related error patterns across ASR models
 
-We will get and process this data using the Hugging Face datasets library, which provides a convenient interface for downloading and working with speech datasets.
 
 ## Resources:
   Phonetics Dictionary: https://github.com/cmusphinx/cmudict/blob/master/cmudict.dict
