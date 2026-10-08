@@ -3,9 +3,18 @@ CS506 Group Meeting 10/8 Notes:
  - Course staff won't be able to help us with understanding how ASR models work
 
  - Data:
-	 - Audiclips and associated transcripts
-	 - Select an ASR model
+	 - Audioclips and associated transcripts
+	 - Select an ASR model (Whisper)
 	 - Phoneme Data Organized
 	 - Be able to calculate WER
 
- - Exploratory
+ - Exploratory Data Analysis (EDA):
+	 - Look at existing data
+	 - Examine word error rate
+	 - Potentially link errors to words
+
+ - Data Visualization:
+	 - 
+
+ - Data Processing:
+	 - 
