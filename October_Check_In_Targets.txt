@@ -1,0 +1,11 @@
+CS506 Group Meeting 10/8 Notes:
+
+ - Course staff won't be able to help us with understanding how ASR models work
+
+ - Data:
+	 - Audiclips and associated transcripts
+	 - Select an ASR model
+	 - Phoneme Data Organized
+	 - Be able to calculate WER
+
+ - Exploratory
