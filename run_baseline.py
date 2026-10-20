@@ -16,7 +16,7 @@ import cmudict
 
 DATASET_NAME = "dev-other"
 MODEL_NAME = "base.en"
-NUM_CLIPS = 50
+NUM_CLIPS = None  # None = full split
 
 # Available LibriSpeech datasets
 DATASET_OPTIONS = {
@@ -104,9 +104,16 @@ for i, sample in enumerate(islice(dataset, NUM_CLIPS)):
     })
 
     print(
-        f"Clip {i+1}/{NUM_CLIPS} | "
+        f"Clip {i+1}/{NUM_CLIPS or 'all'} | "
         f"WER: {error:.2%}"
     )
+
+    # Checkpoint so a long run isn't lost if it crashes
+    if (i + 1) % 250 == 0:
+        pd.DataFrame(results).to_csv(
+            f"dev_other_results_{MODEL_NAME}.partial.csv",
+            index=False
+        )
 
 # 5. Save results
 df = pd.DataFrame(results)

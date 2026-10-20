@@ -58,6 +58,7 @@ def extract_phonemes(text):
     )
 
     phonemes = []
+    word_phonemes = []
     g2p_words = []
     unresolved_words = []
 
@@ -66,6 +67,7 @@ def extract_phonemes(text):
         phones, source = pronounce_word(word)
 
         phonemes.extend(phones)
+        word_phonemes.append(" ".join(phones))
 
         if source == "g2p":
             g2p_words.append(word)
@@ -75,6 +77,8 @@ def extract_phonemes(text):
 
     return pd.Series({
         "phonemes": " ".join(phonemes),
+        # Same phonemes with word boundaries kept, e.g. "DH AH | K AE T"
+        "word_phonemes": " | ".join(word_phonemes),
         "num_phonemes": len(phonemes),
         "g2p_words": ", ".join(g2p_words),
         "unresolved_words": ", ".join(unresolved_words)
