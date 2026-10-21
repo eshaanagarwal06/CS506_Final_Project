@@ -1,0 +1,259 @@
+from contextlib import redirect_stdout
+import csv
+import io
+import json
+from pathlib import Path
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import Mock, patch
+from urllib.error import HTTPError
+
+from transcribe_selection import average_logprob, load_audio_metadata, load_gpu_model, run_selection, fetch_audio, seed_transcription
+
+
+def write_selection(path, count=3):
+    rows = [
+        {
+            "dataset": "dev-other", "audio_id": f"10-20-{index:04}",
+            "speaker_id": "10", "chapter_id": "20", "reference_text": "A CAT",
+        }
+        for index in range(count)
+    ]
+    with path.open("x", encoding="utf-8", newline="") as source:
+        writer = csv.DictWriter(source, fieldnames=rows[0])
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
+
+
+def read_results(path):
+    with path.open(encoding="utf-8", newline="") as source:
+        return list(csv.DictReader(source))
+
+
+class TranscriptionTests(unittest.TestCase):
+    def setUp(self):
+        torch = SimpleNamespace(
+            cuda=SimpleNamespace(get_device_name=lambda index: "Mock GPU"),
+            version=SimpleNamespace(cuda="mock"), manual_seed=Mock(),
+        )
+        numpy_random = SimpleNamespace(seed=Mock())
+        self.torch_patch = patch.dict(sys.modules, {
+            "torch": torch, "numpy": SimpleNamespace(random=numpy_random), "numpy.random": numpy_random,
+        })
+        self.torch_patch.start()
+        self.addCleanup(self.torch_patch.stop)
+
+    def test_audio_links_are_paged_once_and_incomplete_pages_are_rejected(self):
+        load_audio_metadata.cache_clear()
+        self.addCleanup(load_audio_metadata.cache_clear)
+        pages = [
+            {"partial": False, "num_rows_total": 2,
+             "rows": [{"row": {"id": f"10-20-{index:04}", "audio": [{"src": f"clip-{index}.flac"}]}}]}
+            for index in range(2)
+        ]
+        responses = [io.BytesIO(json.dumps(page).encode()) for page in pages]
+        with patch("transcribe_selection.urlopen", side_effect=responses) as request:
+            recordings = load_audio_metadata("dev-other")
+            self.assertEqual(set(recordings), {"10-20-0000", "10-20-0001"})
+            self.assertEqual(recordings["10-20-0001"]["audio"][0]["src"], "clip-1.flac")
+            self.assertIs(load_audio_metadata("dev-other"), recordings)
+            self.assertEqual(request.call_count, 2)
+            self.assertIn("/rows?", request.call_args_list[0].args[0])
+            self.assertIn("offset=1", request.call_args_list[1].args[0])
+        load_audio_metadata.cache_clear()
+        pages[0]["partial"] = True
+        with patch("transcribe_selection.urlopen", return_value=io.BytesIO(json.dumps(pages[0]).encode())):
+            with self.assertRaisesRegex(ValueError, "incomplete audio metadata"):
+                load_audio_metadata("dev-other")
+
+    def test_one_clip_limit_then_resume_without_retranscribing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "selection.csv"
+            output = Path(directory) / "outputs" / "results.csv"
+            clips = write_selection(source)
+            source_before = source.read_bytes()
+            model = Mock()
+            model.device = "cuda:0"
+            model.transcribe.return_value = {"text": "A cat."}
+            with patch("transcribe_selection.load_gpu_model", return_value=model) as load_model, \
+                 patch("transcribe_selection.fetch_audio", return_value=[0.0]) as fetch, \
+                 patch("transcribe_selection.score_transcription", return_value=0.0), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(run_selection(source, output, limit=1), (1, 0))
+                first_row = read_results(output)[0]
+                self.assertEqual(first_row["audio_id"], clips[0]["audio_id"])
+                self.assertEqual(first_row["predicted_text"], "A cat.")
+                self.assertEqual(first_row["wer"], "0.0")
+                self.assertEqual(model.transcribe.call_args.kwargs, {"language": "en", "fp16": False})
+                self.assertEqual(run_selection(source, output, limit=1), (0, 0))
+                self.assertEqual(load_model.call_count, 1)
+                self.assertEqual(fetch.call_count, 1)
+                self.assertEqual(run_selection(source, output), (2, 0))
+                self.assertEqual(load_model.call_count, 2)
+                self.assertEqual(fetch.call_count, 3)
+            saved = read_results(output)
+            self.assertEqual(saved[0], first_row)
+            self.assertEqual([row["audio_id"] for row in saved], [clip["audio_id"] for clip in clips])
+            self.assertEqual(source.read_bytes(), source_before)
+
+    def test_confidence_uses_duration_weights_and_keeps_missing_scores(self):
+        segments = [{"start": 0, "end": 1, "avg_logprob": -0.2},
+                    {"start": 1, "end": 4, "avg_logprob": -0.6}]
+        self.assertAlmostEqual(average_logprob(segments), -0.5)
+        self.assertIsNone(average_logprob([]))
+        with self.assertRaisesRegex(ValueError, "Invalid Whisper confidence"):
+            average_logprob([dict(segments[0], avg_logprob=float("nan"))])
+
+    def test_confidence_resume_and_cache_only_do_not_download(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "selection.csv"
+            output = Path(directory) / "confidence.csv"
+            clips = write_selection(source, 1)
+            model = Mock(device="cuda:0")
+            model.transcribe.return_value = {
+                "text": "A cat.", "segments": [{"start": 0, "end": 1, "avg_logprob": -0.2}],
+            }
+            with patch("transcribe_selection.load_gpu_model", return_value=model) as load_model, \
+                 patch("transcribe_selection.fetch_audio", return_value=[0.0]), \
+                 patch("transcribe_selection.score_transcription", return_value=0.0), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(run_selection(source, output, confidence=True), (1, 0))
+                self.assertEqual(float(read_results(output)[0]["avg_logprob"]), -0.2)
+                load_model.reset_mock()
+                self.assertEqual(run_selection(source, output, confidence=True), (0, 0))
+                load_model.assert_not_called()
+                with self.assertRaisesRegex(ValueError, "incompatible CSV header"):
+                    run_selection(source, output)
+            with patch("transcribe_selection.urlopen") as request, \
+                 patch("transcribe_selection.load_audio_metadata") as metadata:
+                with self.assertRaisesRegex(ValueError, "Downloads are disabled"):
+                    fetch_audio(clips[0], directory, cached_only=True)
+                request.assert_not_called()
+                metadata.assert_not_called()
+
+    def test_failed_audio_is_retried_and_disk_errors_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "selection.csv"
+            output = Path(directory) / "results.csv"
+            clips = write_selection(source, 2)
+            model = Mock()
+            model.device = "cuda:0"
+            model.transcribe.return_value = {"text": "A cat."}
+            with patch("transcribe_selection.load_gpu_model", return_value=model), \
+                 patch("transcribe_selection.fetch_audio") as fetch, \
+                 patch("transcribe_selection.score_transcription", return_value=0.0), \
+                 redirect_stdout(io.StringIO()):
+                fetch.side_effect = [ValueError("bad audio"), [0.0]]
+                self.assertEqual(run_selection(source, output), (1, 1))
+                self.assertEqual([row["audio_id"] for row in read_results(output)], [clips[1]["audio_id"]])
+                fetch.side_effect = None
+                fetch.return_value = [0.0]
+                self.assertEqual(run_selection(source, output), (1, 0))
+                self.assertEqual(model.transcribe.call_count, 2)
+                self.assertEqual({row["audio_id"] for row in read_results(output)},
+                                 {clip["audio_id"] for clip in clips})
+                with patch("transcribe_selection.csv.DictWriter.writerow", side_effect=OSError("disk full")):
+                    with self.assertRaisesRegex(OSError, "disk full"):
+                        run_selection(source, Path(directory) / "disk-error.csv")
+                fetch.side_effect = HTTPError("https://example.com", 429, "rate limited", {}, None)
+                with self.assertRaisesRegex(RuntimeError, "rate limit reached"):
+                    run_selection(source, Path(directory) / "rate-limit.csv")
+
+            with patch("transcribe_selection.load_gpu_model", return_value=model), \
+                 patch("transcribe_selection.load_audio_metadata", side_effect=OSError("server unavailable")) as metadata, \
+                 redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(RuntimeError, "Could not load audio metadata"):
+                    run_selection(source, Path(directory) / "metadata-error.csv")
+                metadata.assert_called_once()
+
+    def test_bad_checkpoint_and_missing_cuda_stop_early(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "selection.csv"
+            output = Path(directory) / "results.csv"
+            write_selection(source)
+            output.write_text("wrong,header\n", encoding="utf-8")
+            before = output.read_bytes()
+            with patch("transcribe_selection.load_gpu_model") as load_model:
+                with self.assertRaisesRegex(ValueError, "incompatible CSV header"):
+                    run_selection(source, output, limit=1)
+                load_model.assert_not_called()
+            self.assertEqual(output.read_bytes(), before)
+
+        torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+        whisper = SimpleNamespace(load_model=Mock())
+        with patch.dict(sys.modules, {"torch": torch, "whisper": whisper}):
+            with self.assertRaisesRegex(RuntimeError, "CUDA is unavailable"):
+                load_gpu_model()
+            whisper.load_model.assert_not_called()
+
+    def test_model_and_selection_metadata_protect_resume_and_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "selection.csv"
+            output = Path(directory) / "tiny.csv"
+            write_selection(source, 1)
+            model = Mock(device="cuda:0")
+            model.transcribe.return_value = {"text": "A cat."}
+            with patch("transcribe_selection.load_gpu_model", return_value=model) as load, \
+                 patch("transcribe_selection.fetch_audio", return_value=[0.0]), \
+                 patch("transcribe_selection.score_transcription", return_value=0.0), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(run_selection(source, output, model_name="tiny.en"), (1, 0))
+                load.assert_called_once_with("tiny.en", None, False)
+                details = json.loads(output.with_suffix(".metadata.json").read_text())
+                self.assertEqual(details["model_name"], "tiny.en")
+                self.assertEqual(details["effective_device"], "cuda:0")
+                self.assertEqual(details["settings"]["fp16"], False)
+                before = output.read_bytes()
+                with self.assertRaisesRegex(ValueError, "metadata does not match"):
+                    run_selection(source, output, model_name="base.en")
+                self.assertEqual(output.read_bytes(), before)
+                historical = Path(directory) / "historical.csv"
+                historical.write_bytes(before)
+                with self.assertRaisesRegex(ValueError, "Historical results are read-only"):
+                    run_selection(source, historical, model_name="tiny.en")
+                self.assertFalse(historical.with_suffix(".metadata.json").exists())
+
+    def test_shared_audio_cache_avoids_requests_and_cache_disk_failure_stops(self):
+        with tempfile.TemporaryDirectory() as directory:
+            clip = {"dataset": "train-other-500", "audio_id": "10-20-0000",
+                    "speaker_id": "10", "chapter_id": "20", "reference_text": "A CAT"}
+            sample = {"id": clip["audio_id"], "speaker_id": 10, "chapter_id": 20,
+                      "text": "A CAT", "audio": [{"type": "audio/flac", "src": "https://example.invalid"}]}
+            with patch("transcribe_selection.load_audio_metadata", return_value={clip["audio_id"]: sample}) as metadata, \
+                 patch("transcribe_selection.urlopen", return_value=io.BytesIO(b"flac")) as request, \
+                 patch("transcribe_selection.decode_audio", return_value=[0.0]) as decode:
+                cache = Path(directory) / "audio"
+                self.assertEqual(fetch_audio(clip, cache), [0.0])
+                self.assertEqual(fetch_audio(clip, cache), [0.0])
+                metadata.assert_called_once_with("train-other-500", "10")
+                request.assert_called_once()
+                self.assertEqual(decode.call_count, 2)
+            cached_file = cache / "train-other-500" / "10-20-0000.flac"
+            before = cached_file.read_bytes()
+            with patch("transcribe_selection.decode_audio", side_effect=ValueError("bad FLAC")), \
+                 patch("transcribe_selection.urlopen") as request:
+                with self.assertRaisesRegex(ValueError, "Cache left unchanged"):
+                    fetch_audio(clip, cache)
+                request.assert_not_called()
+            self.assertEqual(cached_file.read_bytes(), before)
+            with patch("transcribe_selection.random.seed") as python_seed, \
+                 patch("numpy.random.seed") as numpy_seed:
+                first = seed_transcription("10-20-0000")
+                seed_transcription("10-20-0001")
+                second = seed_transcription("10-20-0000")
+                self.assertEqual(first, second)
+                self.assertNotEqual(python_seed.call_args_list[0], python_seed.call_args_list[1])
+                self.assertEqual(numpy_seed.call_args_list[0], numpy_seed.call_args_list[2])
+            with patch("transcribe_selection.load_audio_metadata", return_value={clip["audio_id"]: sample}), \
+                 patch("transcribe_selection.urlopen", return_value=io.BytesIO(b"flac")), \
+                 patch("transcribe_selection.decode_audio", return_value=[0.0]), \
+                 patch("transcribe_selection.Path.mkdir", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(RuntimeError, "Could not save audio cache"):
+                    fetch_audio(clip, Path(directory) / "disk-error")
+
+
+if __name__ == "__main__":
+    unittest.main()
