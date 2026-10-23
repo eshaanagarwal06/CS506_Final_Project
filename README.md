@@ -1,3 +1,4 @@
+# Analyzing and Predicting Speech Recognition Errors Using Phonetic Patterns
 ## Description:
 
 Our project will investigate whether the phonetic composition of a spoken sentence can be used to predict the Word Error Rate (WER) of an automatic speech recognition system. We will use labeled speech datasets such as LibriSpeech, which provides audio clips paired with ground-truth transcripts, in addition to our own devised/sources transcripts and associated recorded speeches. Each audio clip will be processed through an ASR model, and the predicted transcript will be compared with the correct transcript to calculate WER.
@@ -159,3 +160,4 @@ Before training models, we will examine how transcription errors vary with diffe
 - [JiWER](https://github.com/jitsi/jiwer) – Python package for calculating Word Error Rate (WER) and other ASR evaluation metrics.
 - [OpenAI Whisper](https://github.com/openai/whisper) – Automatic speech recognition model that can be used to generate predicted transcripts.
 - [Mozilla Common Voice](https://commonvoice.mozilla.org/datasets) – Large crowdsourced speech dataset that could be used as an extension for testing more diverse speakers and accents.
+- [G2P (Grapheme-to-Phoneme) – g2p-en](https://github.com/Kyubyong/g2p?utm_source=chatgpt.com) – Python package used to convert text into phoneme sequences, complementing CMUdict by predicting pronunciations for words not found in the dictionary.
