@@ -34,14 +34,14 @@ Run these three scripts in order from the repository root. Each one reads the pr
 
 ```bash
 python run_baseline.py
-python complete_phonemes
+python complete_phonemes.py
 python build_features.py
 ```
 
 | Step | What it does | Output |
 | --- | --- | --- |
 | `run_baseline.py` | Transcribes each clip with Whisper, computes WER against the LibriSpeech transcript, and converts the transcript to phonemes with CMUdict | `dev_other_results_base.en.csv`, `dev-other_base.en_phonemes.csv` |
-| `complete_phonemes` | Fills in phonemes for words missing from CMUdict (mostly names) using G2P, and records word boundaries | `dev-other_base.en_phonemes_complete.csv` |
+| `complete_phonemes.py` | Fills in phonemes for words missing from CMUdict (mostly names) using G2P, and records word boundaries | `dev-other_base.en_phonemes_complete.csv` |
 | `build_features.py` | Builds one row of phonetic features per clip, plus `wer`, and prints the features most correlated with WER | `dev-other_base.en_features.csv` |
 
 The first step is the slow one. On the full dev-other split (2,864 clips) it took about 10 minutes on an M4 Max, and it will be much slower on older laptops. It saves a checkpoint (`*.partial.csv`) every 250 clips. The other two steps take under a minute.
