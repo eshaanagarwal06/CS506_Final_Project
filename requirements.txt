@@ -6,3 +6,5 @@ nltk==3.10.3
 openai-whisper==20250625
 pandas==3.0.6
 soundfile==0.14.0
+matplotlib==
+scikit-learn==
