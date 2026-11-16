@@ -6,7 +6,7 @@ import pandas as pd
 
 # ========== SETTINGS ==========
 
-INPUT_FILE = "dev-other_base.en_phonemes_complete.csv"
+INPUT_FILE = "dev-other_base.en_processed.csv"
 OUTPUT_FILE = "dev-other_base.en_features.csv"
 
 # Number of most common within-word phoneme bigrams to keep as features

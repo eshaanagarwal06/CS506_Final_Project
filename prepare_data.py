@@ -1,4 +1,3 @@
-
 import io
 import re
 
@@ -10,6 +9,8 @@ from datasets import load_dataset, Audio
 from jiwer import wer
 from itertools import islice
 import cmudict
+from g2p_en import G2p
+from functools import lru_cache
 
 
 # ========== EXPERIMENT SETTINGS ==========
@@ -17,6 +18,7 @@ import cmudict
 DATASET_NAME = "dev-other"
 MODEL_NAME = "base.en"
 NUM_CLIPS = None  # None = full split
+OUTPUT_FILE = f"{DATASET_NAME}_{MODEL_NAME}_processed.csv"
 
 # Available LibriSpeech datasets
 DATASET_OPTIONS = {
@@ -111,66 +113,128 @@ for i, sample in enumerate(islice(dataset, NUM_CLIPS)):
     # Checkpoint so a long run isn't lost if it crashes
     if (i + 1) % 250 == 0:
         pd.DataFrame(results).to_csv(
-            f"dev_other_results_{MODEL_NAME}.partial.csv",
+            f"{DATASET_NAME}_{MODEL_NAME}.partial.csv",
             index=False
         )
 
-# 5. Save results
+# 5. Summarize results
 df = pd.DataFrame(results)
-
-df.to_csv(
-    f"dev_other_results_{MODEL_NAME}.csv",
-    index=False
-)
 
 print("\n--- SUMMARY ---")
 print("Total clips:", len(df))
 print("Average clip WER:", df["wer"].mean())
 print("Clips with errors:", (df["wer"] > 0).sum())
-print("Results saved!")
 
-# 6. Extract phonemes from reference transcripts
+# 6. Extract complete phonemes from reference transcripts
+
+# Load pronunciation tools
 cmu = cmudict.dict()
+g2p = G2p()
+
+# Valid ARPAbet phonemes
+VALID_PHONEMES = set(
+    "AA AE AH AO AW AY B CH D DH EH ER EY F G HH "
+    "IH IY JH K L M N NG OW OY P R S SH T TH "
+    "UH UW V W Y Z ZH".split()
+)
+
+
+@lru_cache(maxsize=None)
+def pronounce_word(word):
+
+    if word in cmu:
+        phones = cmu[word][0]
+        source = "cmudict"
+
+    else:
+        predicted = g2p(word)
+
+        phones = [
+            phone for phone in predicted
+            if isinstance(phone, str)
+            and re.sub(r"\d", "", phone) in VALID_PHONEMES
+        ]
+
+        source = "g2p" if phones else "unresolved"
+
+    phones = [
+        re.sub(r"\d", "", phone)
+        for phone in phones
+    ]
+
+    return phones, source
+
+
 def extract_phonemes(text):
-    words = re.findall(r"[a-z]+(?:'[a-z]+)?", text.lower())
+
+    words = re.findall(
+        r"[a-z]+(?:'[a-z]+)?",
+        str(text).lower()
+    )
 
     phonemes = []
-    unknown_words = []
+    word_phonemes = []
+    g2p_words = []
+    unresolved_words = []
 
     for word in words:
-        if word in cmu:
-            pronunciation = cmu[word][0]
 
-            for phone in pronunciation:
-                phone = re.sub(r"\d", "", phone)
-                phonemes.append(phone)
-        else:
-            unknown_words.append(word)
+        phones, source = pronounce_word(word)
 
-    return phonemes, unknown_words
+        phonemes.extend(phones)
+        word_phonemes.append(" ".join(phones))
+
+        if source == "g2p":
+            g2p_words.append(word)
+
+        elif source == "unresolved":
+            unresolved_words.append(word)
+
+    return pd.Series({
+        "phonemes": " ".join(phonemes),
+        # Same phonemes with word boundaries kept, e.g. "DH AH | K AE T"
+        "word_phonemes": " | ".join(word_phonemes),
+        "num_phonemes": len(phonemes),
+        "g2p_words": ", ".join(g2p_words),
+        "unresolved_words": ", ".join(unresolved_words)
+    })
 
 
-# Apply phoneme extraction to every clip
-phoneme_results = df["reference_text"].apply(extract_phonemes)
+# Extract phonemes for all transcripts
+new_columns = df["reference_text"].apply(extract_phonemes)
 
-df["phonemes"] = phoneme_results.apply(
-    lambda x: " ".join(x[0])
+for column in new_columns.columns:
+    df[column] = new_columns[column]
+
+# 7. Save results
+df.to_csv(OUTPUT_FILE, index=False)
+
+print("\n--- PHONEME COMPLETION ---")
+
+print("Total clips:", len(df))
+
+print(
+    "Clips using G2P:",
+    (df["g2p_words"] != "").sum()
 )
 
-df["unknown_words"] = phoneme_results.apply(
-    lambda x: ", ".join(x[1])
+print(
+    "Clips with unresolved words:",
+    (df["unresolved_words"] != "").sum()
 )
 
-df["num_phonemes"] = phoneme_results.apply(
-    lambda x: len(x[0])
-)
+print("\n--- G2P PRONUNCIATIONS ---")
 
-# Save the updated dataset
-df.to_csv(
-    f"{DATASET_NAME}_{MODEL_NAME}_phonemes.csv",
-    index=False
-)
+g2p_vocabulary = set()
 
-print("\n--- PHONEME EXTRACTION ---")
-print(df[["reference_text", "phonemes", "wer"]].head())
-print("Clips with unknown words:", (df["unknown_words"] != "").sum())
+for entry in df["g2p_words"]:
+    if entry:
+        g2p_vocabulary.update(
+            word.strip() for word in entry.split(",")
+        )
+
+for word in sorted(g2p_vocabulary):
+    phones, _ = pronounce_word(word)
+    print(f"{word}: {' '.join(phones)}")
+
+print(f"\nResults saved to {OUTPUT_FILE}")
