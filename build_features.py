@@ -31,7 +31,7 @@ df = pd.read_csv(INPUT_FILE, keep_default_na=False)
 if "word_phonemes" not in df.columns:
     raise ValueError(
         f"{INPUT_FILE} has no word_phonemes column. "
-        "Re-run complete_phonemes first."
+        "Re-run prepare_data.py first."
     )
 
 

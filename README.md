@@ -30,33 +30,35 @@ The LibriSpeech audio is streamed from Hugging Face the first time you run the p
 
 ### Pipeline
 
-Run these three scripts in order from the repository root. Each one reads the previous script's output.
+Run these scripts in order from the repository root. Each one reads the previous script's output.
 
 ```bash
-python run_baseline.py
-python complete_phonemes.py
+python prepare_data.py
 python build_features.py
+python visualize_data.py
+python train_models.py
 ```
 
 | Step | What it does | Output |
 | --- | --- | --- |
-| `run_baseline.py` | Transcribes each clip with Whisper, computes WER against the LibriSpeech transcript, and converts the transcript to phonemes with CMUdict | `dev_other_results_base.en.csv`, `dev-other_base.en_phonemes.csv` |
-| `complete_phonemes.py` | Fills in phonemes for words missing from CMUdict (mostly names) using G2P, and records word boundaries | `dev-other_base.en_phonemes_complete.csv` |
+| `prepare_data.py` | Transcribes each clip with Whisper, computes WER against the LibriSpeech transcript, and converts the transcript to phonemes with CMUdict (falling back to G2P for words missing from CMUdict, mostly names), keeping word boundaries | `dev-other_base.en_processed.csv` |
 | `build_features.py` | Builds one row of phonetic features per clip, plus `wer`, and prints the features most correlated with WER | `dev-other_base.en_features.csv` |
+| `visualize_data.py` | Plots each feature's correlation with WER and the distribution of WER | `phoneme_corr.svg`, `feature_corr.svg`, `wer_distribution.svg` |
+| `train_models.py` | Compares a mean baseline, Ridge, MLP, Random Forest and Gradient Boosting with 5-fold cross-validation grouped by speaker, then scores the best model and the baseline on a held-out set of unseen speakers | `model_performance.svg` |
 
-The first step is the slow one. On the full dev-other split (2,864 clips) it took about 10 minutes on an M4 Max, and it will be much slower on older laptops. It saves a checkpoint (`*.partial.csv`) every 250 clips. The other two steps take under a minute.
+The first step is the slow one. On the full dev-other split (2,864 clips) it took about 10 minutes on an M4 Max, and it will be much slower on older laptops. It saves a checkpoint (`*.partial.csv`) every 250 clips. The other steps take a minute or two.
 
-The output CSVs are committed to the repo, so you can skip straight to `build_features.py` (or to the analysis) without rerunning Whisper.
+`dev-other_base.en_features.csv` is committed to the repo, so you can skip straight to `visualize_data.py` and `train_models.py` without rerunning Whisper.
 
 ### Settings
 
-The experiment settings are at the top of `run_baseline.py`:
+The experiment settings are at the top of `prepare_data.py`:
 
 - `DATASET_NAME`: which LibriSpeech split to use (`dev-clean`, `dev-other`, `test-clean`, `test-other`).
 - `MODEL_NAME`: the Whisper model (for example `tiny.en`, `base.en`, `small.en`).
 - `NUM_CLIPS`: how many clips to process. `None` processes the whole split; a small number like `20` is useful for a quick test.
 
-The input and output filenames in `complete_phonemes` and `build_features.py` are hardcoded to `dev-other` and `base.en`. If you change the dataset or model, update `INPUT_FILE` and `OUTPUT_FILE` in those scripts to match. Note that `run_baseline.py` always names its first output `dev_other_results_<model>.csv`, whatever the dataset.
+The filenames in `build_features.py`, `visualize_data.py` and `train_models.py` are hardcoded to `dev-other` and `base.en`. If you change the dataset or model, update `INPUT_FILE`/`OUTPUT_FILE` or `DATA_FILE` in those scripts to match.
 
 ### Feature columns
 
