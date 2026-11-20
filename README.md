@@ -71,6 +71,25 @@ The filenames in `build_features.py`, `visualize_data.py` and `train_models.py` 
 - **Phonemes:** `ph_<PHONEME>`, the share of the clip's phonemes that are that phoneme (39 columns)
 - **Bigrams:** `bi_<A>_<B>`, the share of the clip's within-word phoneme bigrams that are that bigram, for the 20 most common bigrams in the dataset
 
+## CSV summary
+
+Each CSV has one row per audio clip. The transcription files use Whisper Base English (`base.en`).
+
+| File | LibriSpeech split | Contents | Clips | Speakers | Corpus WER | Mean clip WER |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| [`train-other-500_base.en_results.csv`](results/train-other-500_base.en_results.csv) | `train-other-500` | Transcripts, errors, confidence, and timing | 148,688 | 1,166 | 6.50% | 7.47% |
+| [`dev-other_base.en_processed.csv`](dev-other_base.en_processed.csv) | `dev-other` | Current transcripts and phonemes | 2,864 | 33 | 10.40% | 12.12% |
+| [`dev-other_base.en_features.csv`](dev-other_base.en_features.csv) | `dev-other` | Current model input with 71 features | 2,864 | 33 | 10.40% | 12.12% |
+| [`dev_other_results_base.en.csv`](dev_other_results_base.en.csv) | `dev-other` | Earlier transcription export | 2,864 | 33 | 10.44% | 12.17% |
+| [`dev-other_base.en_phonemes.csv`](dev-other_base.en_phonemes.csv) | `dev-other` | Earlier CMUdict phoneme export | 2,864 | 33 | 10.44% | 12.17% |
+| [`dev-other_base.en_phonemes_complete.csv`](dev-other_base.en_phonemes_complete.csv) | `dev-other` | Earlier phoneme export with G2P fallback | 2,864 | 33 | 10.44% | 12.17% |
+
+Corpus WER divides all word errors by all reference words. Mean clip WER gives every clip equal weight. The CSVs store `wer` as a fraction (for example, `0.10` means 10%).
+
+The current `dev-other` feature file carries over the WER values from the processed file. All five `dev-other` files cover the same clips. Ten clips have different WER values between the earlier exports and the current pipeline outputs.
+
+The `train-other-500` CSV records 315,674 errors across 4,858,957 normalized reference words. Reference transcripts come from the [LibriSpeech ASR Corpus](https://www.openslr.org/12/) by Panayotov, Chen, Povey, and Khudanpur, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
 ## Rough Timeline
 ### 🔵 Mid October
 - Finalize the dataset and ASR model.
