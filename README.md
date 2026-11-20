@@ -41,14 +41,29 @@ python train_models.py
 
 | Step | What it does | Output |
 | --- | --- | --- |
-| `prepare_data.py` | Transcribes each clip with Whisper, computes WER against the LibriSpeech transcript, and converts the transcript to phonemes with CMUdict (falling back to G2P for words missing from CMUdict, mostly names), keeping word boundaries | `dev-other_base.en_processed.csv` |
+| `prepare_data.py` | Transcribes each clip with Whisper, computes WER against the LibriSpeech transcript, and converts the transcript to phonemes with CMUdict (falling back to G2P for words missing from CMUdict, mostly names), keeping word boundaries. The phoneme code lives in `phonemes.py` | `dev-other_base.en_processed.csv` |
 | `build_features.py` | Builds one row of phonetic features per clip, plus `wer`, and prints the features most correlated with WER | `dev-other_base.en_features.csv` |
 | `visualize_data.py` | Plots each feature's correlation with WER and the distribution of WER | `phoneme_corr.svg`, `feature_corr.svg`, `wer_distribution.svg` |
 | `train_models.py` | Compares a mean baseline, Ridge, MLP, Random Forest and Gradient Boosting with 5-fold cross-validation grouped by speaker, then scores the best model and the baseline on a held-out set of unseen speakers | `model_performance.svg` |
 
-The first step is the slow one. On the full dev-other split (2,864 clips) it took about 10 minutes on an M4 Max, and it will be much slower on older laptops. It saves a checkpoint (`*.partial.csv`) every 250 clips. The other steps take a minute or two.
+The first step is the slow one. On the full dev-other split (2,864 clips) it took about 10 minutes on an M4 Max, and it will be much slower on older laptops. It saves a checkpoint (`*.partial.csv`) every 250 clips. On dev-other, the other steps take about 15 seconds in total.
 
 `dev-other_base.en_features.csv` is committed to the repo, so you can skip straight to `visualize_data.py` and `train_models.py` without rerunning Whisper.
+
+### train-other-500
+
+`results/train-other-500_base.en_results.csv` already has Whisper transcripts and WER for all 148,688 clips, so this split skips Whisper. Add phonemes, then build features:
+
+```bash
+python phonemes.py results/train-other-500_base.en_results.csv results/train-other-500_base.en_processed.csv.gz
+python build_features.py results/train-other-500_base.en_processed.csv.gz results/train-other-500_base.en_features.csv.gz
+```
+
+These take about 30 and 40 seconds on an M4 Max. Paths ending in `.gz` are compressed, because the uncompressed files would be over GitHub's 100 MB limit. The feature file (`results/train-other-500_base.en_features.csv.gz`, 21 MB) is committed. The processed file (55 MB) is not, since it takes 30 seconds to rebuild.
+
+The 20 bigram columns are the split's own most common bigrams, so they differ slightly between splits (`bi_AH_T` for train-other-500, `bi_AH_S` for dev-other). To give a split the same columns as another, pass `--bigrams-from` with that split's feature file, for example `--bigrams-from results/train-other-500_base.en_features.csv.gz`.
+
+The results CSV also has `avg_logprob`, `audio_seconds` and `processing_seconds`. These come from Whisper or the audio, not the transcript, so `build_features.py` leaves them out.
 
 ### Settings
 
@@ -58,7 +73,7 @@ The experiment settings are at the top of `prepare_data.py`:
 - `MODEL_NAME`: the Whisper model (for example `tiny.en`, `base.en`, `small.en`).
 - `NUM_CLIPS`: how many clips to process. `None` processes the whole split; a small number like `20` is useful for a quick test.
 
-The filenames in `build_features.py`, `visualize_data.py` and `train_models.py` are hardcoded to `dev-other` and `base.en`. If you change the dataset or model, update `INPUT_FILE`/`OUTPUT_FILE` or `DATA_FILE` in those scripts to match.
+`phonemes.py` and `build_features.py` take input and output paths as arguments (`build_features.py` defaults to the dev-other files). The filenames in `visualize_data.py` and `train_models.py` are still hardcoded to `dev-other` and `base.en`; update `DATA_FILE` in those scripts to use another split.
 
 ### Feature columns
 
