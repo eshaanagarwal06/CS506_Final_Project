@@ -1,3 +1,4 @@
+import argparse
 import re
 from collections import Counter
 
@@ -6,8 +7,22 @@ import pandas as pd
 
 # ========== SETTINGS ==========
 
-INPUT_FILE = "dev-other_base.en_processed.csv"
-OUTPUT_FILE = "dev-other_base.en_features.csv"
+# Defaults are the dev-other files; pass paths to use another split, e.g.
+#   python build_features.py results/train-other-500_base.en_processed.csv.gz \
+#       results/train-other-500_base.en_features.csv.gz
+# Paths ending in .gz are read and written compressed.
+parser = argparse.ArgumentParser(description="Build phonetic features per clip.")
+parser.add_argument("input", nargs="?", default="dev-other_base.en_processed.csv")
+parser.add_argument("output", nargs="?", default="dev-other_base.en_features.csv")
+parser.add_argument(
+    "--bigrams-from",
+    help="reuse the bi_ columns of an existing features CSV instead of picking "
+         "this split's top bigrams, so two splits get identical columns",
+)
+args = parser.parse_args()
+
+INPUT_FILE = args.input
+OUTPUT_FILE = args.output
 
 # Number of most common within-word phoneme bigrams to keep as features
 TOP_BIGRAMS = 20
@@ -76,9 +91,16 @@ bigram_totals = Counter()
 for entry in df["word_phonemes"]:
     bigram_totals.update(word_bigrams(split_words(entry)))
 
-top_bigrams = [
-    bigram for bigram, _ in bigram_totals.most_common(TOP_BIGRAMS)
-]
+if args.bigrams_from:
+    reference_columns = pd.read_csv(args.bigrams_from, nrows=0).columns
+    top_bigrams = [
+        column.removeprefix("bi_")
+        for column in reference_columns if column.startswith("bi_")
+    ]
+else:
+    top_bigrams = [
+        bigram for bigram, _ in bigram_totals.most_common(TOP_BIGRAMS)
+    ]
 
 
 # 3. Build features for one clip
