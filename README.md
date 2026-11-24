@@ -8,6 +8,102 @@ The ground-truth transcripts will then be converted into phoneme sequences using
 We will first perform exploratory analysis to identify relationships between phonetic features and transcription accuracy. We will then train regression models to predict WER from these features and evaluate how much of the variation in ASR performance can be explained by the phonetic composition of the sentence. If time permits, we will compare multiple ASR models to determine whether similar phonetic patterns lead to errors across different systems.
 
 
+## Current Progress
+
+### Data Visualizations
+
+`visualize_data.py` produces three exploratory charts from the dev-other features:
+
+- **WER distribution** (`wer_distribution.svg`): a histogram of per-clip WER, with the mean and median marked. The title gives the share of clips with no errors and the number of clips with WER above 1.
+- **Phoneme correlations** (`phoneme_corr.svg`): the Pearson correlation between WER and each of the 39 phoneme shares. A shaded band marks correlations that are not significant at p < 0.05 (|r| < 1.96 / √n).
+- **Feature correlations** (`feature_corr.svg`): the same chart for the length, vowel/consonant, cluster, out-of-dictionary and bigram features.
+
+![Distribution of WER per clip](visuals/wer_distribution.svg)
+![Correlation of phoneme share with WER](visuals/phoneme_corr.svg)
+![Correlation of non-phoneme features with WER](visuals/feature_corr.svg)
+
+What the dev-other charts show (2,864 clips; correlations with |r| < 0.037 are not significant):
+
+- **WER is heavily right-skewed.** 36% of clips have no errors. The median WER is 0.071, but the mean is pulled up to 0.121 by a long tail, and 4 clips have WER above 1 (more inserted words than the reference has).
+- **Length and word difficulty have the strongest correlations.** WER goes up with the number of words missing from CMUdict (`num_g2p_words`, r = +0.20), average word length (+0.18), phonemes per word (+0.16) and syllables per word (+0.15). These are mostly names and long, rare words. WER goes down for longer clips (`num_words` -0.16, `num_syllables` -0.14, `num_phonemes` -0.13), partly because a single error counts for less in a long clip.
+- **Common function words are linked to fewer errors.** Bigrams from very frequent words have negative correlations: `bi_AH_V` ("of", -0.09), `bi_DH_AH` ("the", -0.06), `bi_IH_Z` ("is", -0.06) and `bi_IH_NG` ("-ing", -0.05). So do the phonemes that make up those words: IH (-0.07), DH (-0.06), HH (-0.05), Z and NG (both -0.05).
+- **Some phonemes are linked to more errors.** AA (+0.10), S (+0.08), R (+0.07), L (+0.07), K and JH (both +0.06), EY (+0.05) and P (+0.05) are positively correlated with WER. 15 of the 39 phonemes and 18 of the 32 other features fall outside the non-significance band.
+- **Every correlation is weak on its own.** The largest is |r| = 0.22, so no single feature explains much of WER. This fits the modest R² of the models below.
+
+An earlier version of `train_models.py`, run on dev-other only, also produced `model_performance.svg`. It compared Ridge, Random Forest, Gradient Boosting and an MLP with 5-fold speaker-grouped CV. Random Forest ranked best and the mean baseline had a CV MAE of 0.1088. On held-out speakers, Random Forest's MAE was 0.118, against 0.126 for the baseline. With only 33 speakers, this result was noisy, so the models are now trained on train-other-500.
+
+![Earlier dev-other model comparison](visuals/model_performance.svg)
+
+The training scripts produce three more charts from train-other-500, saved in `data/`:
+
+- **Classical model performance** (`classical_model_performance.svg`, from `train_models.py`). The left panel shows each model's 5-fold speaker-grouped CV MAE, with whiskers of ±1 fold standard deviation. All three models beat the mean baseline (0.064). Random Forest is best (0.0562), just ahead of Histogram Gradient Boosting (0.0565), with Ridge at 0.0583. The fold-to-fold spread is about ±0.002, so the three models overlap. The right panel plots Random Forest's predicted WER against actual WER for the unseen test speakers. Test MAE is 0.0588, against 0.0665 for the baseline.
+- **Neural network performance** (`nn_model_performance.svg`, from `train_nn.py`). The same predicted-vs-actual plot for the MLP. Its test MAE is 0.0589, against 0.0665 for the baseline, nearly identical to Random Forest.
+- **Feature ablation** (`ablation_progress.svg`, from `feature_ablation.py`). CV MAE as features are removed. The chart has a single point at 71 features (CV MAE about 0.057 on the 20% speaker subsample). This means no single removal improved CV MAE significantly in the first round, so the ablation stopped right away and kept all 71 features.
+
+![Classical model CV scores and Random Forest test predictions](data/classical_model_performance.svg)
+![Neural network test predictions](data/nn_model_performance.svg)
+![Backward feature ablation progress](data/ablation_progress.svg)
+
+In both predicted-vs-actual plots, most predictions are close to the mean: 98% fall between about 0.03 and 0.28, and the median is about 0.06. Actual WER is spread much more widely, with 1% of test clips above 0.5. Phonetic features give a consistent but small improvement over the baseline (about 12% lower MAE), and they don't predict which clips will have very high WER.
+
+### Data Processing
+
+- **Transcription:** we ran Whisper Base English (`base.en`) on two LibriSpeech splits: `dev-other` (2,864 clips, 33 speakers) and `train-other-500` (148,688 clips, 1,166 speakers).
+- **WER:** before computing WER with JiWER, both the reference and the Whisper output go through Whisper's English text normalizer, so differences like "FIFTEEN" vs. "15" or "MR" vs. "Mr." are not counted as errors. Hyphens between letters are also removed, since LibriSpeech transcripts have none. Corpus WER is 6.50% on train-other-500 and 10.40% on dev-other.
+- **Phonemes:** each reference transcript is converted to ARPAbet phonemes using the first CMUdict pronunciation, with stress markers removed. Words missing from CMUdict (mostly names and rare words) are pronounced with the g2p-en model instead. Word boundaries are kept so that clusters and bigrams never cross words.
+- **Features:** each clip gets 71 features: 12 length, vowel/consonant, consonant-cluster and out-of-dictionary counts; the share of each of the 39 phonemes; and the share of the 20 most common within-word bigrams.
+- **Avoiding leakage:** the models only see features computed from the reference transcript. Whisper's confidence (`avg_logprob`), audio length and processing time are kept out of the feature files, and the training scripts accept only the phonetic columns.
+
+### Modeling Methods
+
+Every model predicts a clip's WER from its 71 phonetic features and is compared with a **mean baseline** that predicts the average training WER for every clip.
+
+| Model | Script | Settings |
+| --- | --- | --- |
+| Ridge regression | `train_models.py` | Standardized features, `alpha=10` |
+| Random Forest | `train_models.py` | 100 trees, max depth 16, at least 10 clips per leaf, 80% of features per split |
+| Histogram Gradient Boosting | `train_models.py` | Up to 200 iterations, learning rate 0.05, 15 leaves per tree, L2 regularization 1.0, early stopping |
+| Neural network (MLP) | `train_nn.py` | Standardized features, hidden layers of 64 and 32 ReLU units, Adam, L2 penalty 1.0, batch size 1,024, early stopping |
+
+**Evaluation:**
+- Clips from the same speaker are never split between training and testing. 20% of the train-other-500 speakers are held out as a test set, so the models are tested on voices they have never heard.
+- Models are compared using 5-fold cross-validation on the training speakers, also grouped by speaker, and ranked by mean absolute error (MAE). We also report RMSE and R².
+- The best model is scored on the held-out speakers only once, after it has been chosen.
+
+**Feature selection:** `feature_ablation.py` runs greedy backward elimination on a 20% sample of the training speakers. Each round, it drops the feature whose removal lowers 10-fold CV MAE the most, and stops when no removal gives a significant improvement. The selected features are then compared with the full set on the held-out speakers.
+
+### Results & Interpretation
+
+**Cross-validation (5 folds of training speakers, sorted by MAE)**
+
+| Model | MAE (± fold SD) | RMSE | R² |
+| --- | ---: | ---: | ---: |
+| Random Forest | **0.0562** ± 0.0019 | **0.1191** | **0.173** |
+| Histogram Gradient Boosting | 0.0565 ± 0.0019 | 0.1199 | 0.160 |
+| Neural network (MLP) | 0.0571 ± 0.0016 | 0.1197 | 0.163 |
+| Ridge | 0.0583 ± 0.0016 | 0.1212 | 0.138 |
+| Mean baseline | 0.0639 ± 0.0021 | 0.1292 | -0.001 |
+
+**Held-out test (unseen speakers)**
+
+| Model | MAE | RMSE | R² |
+| --- | ---: | ---: | ---: |
+| Random Forest (best classical model in CV) | **0.0588** | 0.1076 | 0.201 |
+| Neural network (MLP) | 0.0589 | **0.0990** | **0.323** |
+| Mean baseline | 0.0665 | 0.1204 | -0.001 |
+
+**Feature ablation:** no single feature removal significantly improved CV MAE, so the ablation stopped after the first round and kept all 71 features. None of the phonetic features is clearly redundant or harmful to the model.
+
+**Interpretation:**
+
+- **The project's success criterion is met.** Every model beats the mean baseline on MAE, RMSE and R², in cross-validation and on speakers the models never saw. Random Forest, chosen by CV MAE, lowers test MAE from 0.0665 to 0.0588 (11.6% lower).
+- **Phonetic composition explains a modest share of WER.** CV R² ranges from 0.14 (Ridge) to 0.17 (Random Forest), and test R² is 0.20 for Random Forest and 0.32 for the MLP. Most of the variation in WER comes from things the features don't capture, such as the speaker's voice, accent and recording conditions.
+- **Nonlinear models help, but only a little.** Random Forest, Gradient Boosting and the MLP all beat Ridge, which suggests some interactions between features. The three nonlinear models are within about one fold standard deviation of each other in CV, so none of them is clearly better.
+- **The MLP is better on large errors.** Its test MAE matches Random Forest, but its RMSE is lower (0.099 vs. 0.108) and its R² higher (0.32 vs. 0.20). RMSE and R² weight large errors more heavily, so the MLP predicts high-WER clips somewhat better. In CV, though, the MLP's R² was slightly lower than Random Forest's (0.163 vs. 0.173), so the test gap may partly reflect which speakers ended up in the single test split. Random Forest remains the model chosen by our protocol: the test set was only used to score it, not to pick it.
+- **Very high WER is still unpredictable.** As the predicted-vs-actual plots show, predictions stay near the mean, while a small number of clips have WER above 0.5.
+
+- **Which features matter:** the dev-other correlations (see Data Visualizations) point to word difficulty (out-of-dictionary words, long words) and clip length as the strongest signals, with common function words linked to fewer errors. We haven't yet computed model-based feature importances (for example, permutation importance on the test speakers). Doing so would show which features the trained models actually rely on.
+
 ## How to Run
 
 ### Setup
@@ -125,11 +221,11 @@ Each data CSV has one row per audio clip. The transcription files use Whisper Ba
 | --- | --- | --- | ---: | ---: | ---: | ---: |
 | [`train-other-500_base.en_results.csv`](data/train-other-500_base.en_results.csv) | `train-other-500` | Transcripts, errors, confidence, and timing | 148,688 | 1,166 | 6.50% | 7.47% |
 | [`train-other-500_base.en_features.csv.gz`](data/train-other-500_base.en_features.csv.gz) | `train-other-500` | Model input with 71 features, used by the training scripts | 148,688 | 1,166 | 6.50% | 7.47% |
-| [`dev-other_base.en_processed.csv`](dev-other_base.en_processed.csv) | `dev-other` | Current transcripts and phonemes | 2,864 | 33 | 10.40% | 12.12% |
-| [`dev-other_base.en_features.csv`](dev-other_base.en_features.csv) | `dev-other` | 71 features, used by `visualize_data.py` | 2,864 | 33 | 10.40% | 12.12% |
-| [`dev_other_results_base.en.csv`](dev_other_results_base.en.csv) | `dev-other` | Earlier transcription export | 2,864 | 33 | 10.44% | 12.17% |
-| [`dev-other_base.en_phonemes.csv`](dev-other_base.en_phonemes.csv) | `dev-other` | Earlier CMUdict phoneme export | 2,864 | 33 | 10.44% | 12.17% |
-| [`dev-other_base.en_phonemes_complete.csv`](dev-other_base.en_phonemes_complete.csv) | `dev-other` | Earlier phoneme export with G2P fallback | 2,864 | 33 | 10.44% | 12.17% |
+| [`dev-other_base.en_processed.csv`](data/dev-other_base.en_processed.csv) | `dev-other` | Current transcripts and phonemes | 2,864 | 33 | 10.40% | 12.12% |
+| [`dev-other_base.en_features.csv`](data/dev-other_base.en_features.csv) | `dev-other` | 71 features, used by `visualize_data.py` | 2,864 | 33 | 10.40% | 12.12% |
+| [`dev_other_results_base.en.csv`](data/dev_other_results_base.en.csv) | `dev-other` | Earlier transcription export | 2,864 | 33 | 10.44% | 12.17% |
+| [`dev-other_base.en_phonemes.csv`](data/dev-other_base.en_phonemes.csv) | `dev-other` | Earlier CMUdict phoneme export | 2,864 | 33 | 10.44% | 12.17% |
+| [`dev-other_base.en_phonemes_complete.csv`](data/dev-other_base.en_phonemes_complete.csv) | `dev-other` | Earlier phoneme export with G2P fallback | 2,864 | 33 | 10.44% | 12.17% |
 
 Corpus WER divides all word errors by all reference words. Mean clip WER gives every clip equal weight. The CSVs store `wer` as a fraction (for example, `0.10` means 10%).
 
@@ -153,90 +249,6 @@ The training scripts write these to `data/`. Each has one row per model or featu
 | `ablation_candidates.csv` | `feature_ablation.py` | CV MAE without each candidate feature, for every round |
 | `ablation_selected_features.txt` | `feature_ablation.py` | The selected features, one per line |
 | `ablation_test_scores.csv` | `feature_ablation.py` | Held-out scores using all features and using the selected features |
-
-## Rough Timeline
-### 🔵 Mid October
-- Finalize the dataset and ASR model.
-- Build the initial data-processing pipeline.
-- Generate ASR transcripts and calculate WER for each audio clip.
-- Convert ground-truth transcripts into phoneme sequences using CMUdict.
-- Complete phoneme-based feature engineering.
-- Perform exploratory data analysis and create visualizations showing relationships between phonetic features and WER.
-### 🔵 Mid November
-- Train baseline and more advanced regression models.
-- Begin evaluating model performance and identifying important features.
-- Finalize model evaluation and interpretation.
-### 🔵 End of Semester
-- Compare results across models or ASR systems if time permits.
-- Complete final visualizations and summarize findings and limitations.
-- Clean the GitHub repository and prepare the final report and presentation.
-
-## Goals:
-
-  Automatic speech recognition systems can perform very differently depending on the words and sounds contained in an audio sample. Our project will investigate whether the phonetic composition of a spoken sentence can be used to predict how accurately an automatic speech recognition (ASR) model will transcribe it.
-
-Our main research question is:
-
-Can we predict the Word Error Rate (WER) of an audio clip using features derived from the phoneme composition of its ground-truth transcript?  Success means our model beats a baseline model that predicts the average WER for all training clips in the dataset, measured by mean squared error (MSE) or mean absolute error (MAE).
-
-Rather than predicting whether each individual word is transcribed correctly, we will treat each audio clip or sentence as one observation. For every clip, we will calculate the actual WER produced by an ASR system and extract phoneme-based features from the correct transcript. We will then train regression models to predict WER from these features.
-
-A secondary goal will be to determine whether certain phonemes or phoneme combinations are associated with higher transcription error rates.
-
-
-## Data Collection:
-
- We plan to use an existing labeled speech dataset such as LibriSpeech, which contains English audio recordings paired with verified ground-truth transcripts. Using an existing speech corpus will allow us to analyze a large and reproducible set of recordings without needing to collect our own audio.
-
-For each audio clip, we will:
-- Obtain the original audio and its ground-truth transcript.
-- Process the audio using one or more automatic speech recognition models.
-- Compare the predicted transcript with the ground-truth transcript.
-- Calculate the Word Error Rate (WER) for the clip.
-- Convert the ground-truth transcript into phoneme sequences using the CMU Pronouncing Dictionary (CMUdict).
-
-Word Error Rate will be calculated as:
-
-$$
-WER = \frac{S + D + I}{N}
-$$
-
-where (S) represents substitutions, (D) represents deletions, (I) represents insertions, and (N) is the number of words in the reference transcript.
-
-We will get and process this data using the Hugging Face datasets library, which provides a convenient interface for downloading and working with speech datasets.
-
-
-## Feature Extraction
-
-Each audio clip will be represented using features describing the phonetic composition of its transcript.
-
-### Possible features include:
-
-- Frequency of each phoneme
-- Proportion of vowels and consonants
-- Total number of phonemes
-- Average number of phonemes per word
-- Number of syllables
-- Frequency of consonant clusters
-- Frequency of selected phoneme combinations or bigrams
-- Sentence length
-- Average word length
-
-For example, a sentence containing many occurrences of phonemes such as TH, R, or difficult consonant clusters may have a different transcription error rate from a sentence composed primarily of simpler sound combinations.
-
-## Visualization
-
-Before training models, we will examine how transcription errors vary with different phonetic characteristics.
-
-### Potential visualizations include:
-
-- Distribution of WER across audio clips
-- Average WER for sentences containing different phonemes
-- Correlation between phoneme frequency and WER
-- Heatmaps showing WER associated with different phoneme combinations
-- Relationship between sentence length and WER
-- Comparison of phoneme-related error patterns across ASR models
-
 
 ## Resources
 
