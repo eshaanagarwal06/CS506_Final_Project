@@ -1,12 +1,15 @@
 # Analyzing and Predicting Speech Recognition Errors Using Phonetic Patterns
 ## Description:
 
-Our project will investigate whether the phonetic composition of a spoken sentence can be used to predict the Word Error Rate (WER) of an automatic speech recognition system. We will use labeled speech datasets such as LibriSpeech, which provides audio clips paired with ground-truth transcripts, in addition to our own devised/sources transcripts and associated recorded speeches. Each audio clip will be processed through an ASR model, and the predicted transcript will be compared with the correct transcript to calculate WER.
+This project investigates whether the phonetic composition of a spoken sentence can predict the Word Error Rate (WER) of an automatic speech recognition (ASR) system. We use two LibriSpeech splits, which pair read English audio with verified transcripts: `dev-other` (2,864 clips, 33 speakers) for exploratory analysis and `train-other-500` (148,688 clips, 1,166 speakers) for modeling. Each clip was transcribed with OpenAI Whisper Base English (`base.en`), and the output was compared with the reference transcript to compute WER.
 
-The ground-truth transcripts will then be converted into phoneme sequences using the CMU Pronouncing Dictionary. From these sequences, we will extract sentence-level features such as phoneme frequencies, vowel and consonant proportions, average phonemes per word, consonant clusters, and selected phoneme combinations.
+The reference transcripts were converted into phoneme sequences with the CMU Pronouncing Dictionary, using g2p-en for words it is missing. From these sequences we extract sentence-level features such as phoneme frequencies, vowel and consonant proportions, phonemes per word, consonant clusters and common phoneme bigrams. We then train regression models to predict each clip's WER from these features.
 
-We will first perform exploratory analysis to identify relationships between phonetic features and transcription accuracy. We will then train regression models to predict WER from these features and evaluate how much of the variation in ASR performance can be explained by the phonetic composition of the sentence. If time permits, we will compare multiple ASR models to determine whether similar phonetic patterns lead to errors across different systems.
+## Research Question
 
+Can we predict the WER of an audio clip using features derived from the phoneme composition of its reference transcript?
+
+**Success criterion:** a model beats a baseline that predicts the mean training WER for every clip, measured by mean absolute error (MAE) on speakers the model has never seen. A secondary goal is to identify which phonemes and phonetic patterns are associated with higher WER.
 
 ## Current Progress
 
@@ -28,7 +31,7 @@ What the dev-other charts show (2,864 clips; correlations with |r| < 0.037 are n
 - **Length and word difficulty have the strongest correlations.** WER goes up with the number of words missing from CMUdict (`num_g2p_words`, r = +0.20), average word length (+0.18), phonemes per word (+0.16) and syllables per word (+0.15). These are mostly names and long, rare words. WER goes down for longer clips (`num_words` -0.16, `num_syllables` -0.14, `num_phonemes` -0.13), partly because a single error counts for less in a long clip.
 - **Common function words are linked to fewer errors.** Bigrams from very frequent words have negative correlations: `bi_AH_V` ("of", -0.09), `bi_DH_AH` ("the", -0.06), `bi_IH_Z` ("is", -0.06) and `bi_IH_NG` ("-ing", -0.05). So do the phonemes that make up those words: IH (-0.07), DH (-0.06), HH (-0.05), Z and NG (both -0.05).
 - **Some phonemes are linked to more errors.** AA (+0.10), S (+0.08), R (+0.07), L (+0.07), K and JH (both +0.06), EY (+0.05) and P (+0.05) are positively correlated with WER. 15 of the 39 phonemes and 18 of the 32 other features fall outside the non-significance band.
-- **Every correlation is weak on its own.** The largest is |r| = 0.22, so no single feature explains much of WER. This fits the modest R² of the models below.
+- **Every correlation is weak on its own.** The largest is |r| = 0.20 (`num_g2p_words`), so no single feature explains much of WER. This fits the modest R² of the models below.
 
 An earlier version of `train_models.py`, run on dev-other only, also produced `model_performance.svg`. It compared Ridge, Random Forest, Gradient Boosting and an MLP with 5-fold speaker-grouped CV. Random Forest ranked best and the mean baseline had a CV MAE of 0.1088. On held-out speakers, Random Forest's MAE was 0.118, against 0.126 for the baseline. With only 33 speakers, this result was noisy, so the models are now trained on train-other-500.
 
@@ -97,6 +100,13 @@ Every model predicts a clip's WER from its 71 phonetic features and is compared 
 - **Very high WER is still unpredictable.** As the predicted-vs-actual plots show, predictions stay near the mean, while a small number of clips have WER above 0.5.
 - **Which features matter:** the dev-other correlations (see Data Visualizations) point to word difficulty (out-of-dictionary words, long words) and clip length as the strongest signals, with common function words linked to fewer errors. We haven't yet computed model-based feature importances (for example, permutation importance on the test speakers). Doing so would show which features the trained models actually rely on.
 
+## Next Steps
+
+- **Model-based feature importance.** The correlations above look at one feature at a time. We will compute permutation importance for the trained models on the held-out speakers, and finish the greedy backward feature ablation in `feature_ablation.py`, to see which features the models actually rely on. This answers our secondary research question.
+- **High-WER clips.** The models predict close to the mean and miss the clips with very high WER. We will look at those clips (and the clips with WER above 1) to see whether they share phonetic patterns, and decide whether to cap or exclude them.
+- **Other ASR models.** If time permits, we will run a larger Whisper model (for example `small.en`) on the same clips to see whether the same phonetic patterns lead to errors across models.
+- **Reproducibility for the final report.** Add a Makefile that installs dependencies and runs the pipeline, tests for the feature code, a GitHub Actions workflow that runs them, and fix the default file paths in `visualize_data.py` and `build_features.py`, which still point to the repository root instead of `data/`.
+
 ## How to Run
 
 ### Setup
@@ -153,7 +163,7 @@ python train_nn.py
 
 Both feature files are committed, so you can skip straight to `visualize_data.py` or to the training scripts without rerunning Whisper or rebuilding features. `data/train-other-500_base.en_results.csv` is not run through Whisper here: it already has Whisper transcripts and WER for all 148,688 clips.
 
-Paths ending in `.gz` are compressed, because the uncompressed files would be over GitHub's 100 MB limit. The train-other-500 feature file (21 MB) is committed. The processed file (55 MB) is not, since it takes 30 seconds to rebuild.
+Paths ending in `.gz` are compressed, because the uncompressed files would be over GitHub's 100 MB limit. The train-other-500 feature file (21 MB) is committed. The processed file (55 MB) is not, since `phonemes.py` rebuilds it in about 30 seconds (see step 2 above).
 
 ### Training scripts
 

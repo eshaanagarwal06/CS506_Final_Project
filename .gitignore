@@ -1,5 +1,5 @@
 .venv/
 __pycache__/
 *.partial.csv
-data/*_processed.csv.gz
+*_processed.csv.gz
 data/train-other-500_base.en_features.csv
