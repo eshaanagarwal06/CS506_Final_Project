@@ -50,7 +50,7 @@ from train_models import (
     load_data,
 )
 
-ABLATION_CV_FOLDS = 3
+ABLATION_CV_FOLDS = 10
 
 
 def make_model(name):
