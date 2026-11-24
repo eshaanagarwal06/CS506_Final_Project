@@ -34,15 +34,13 @@ An earlier version of `train_models.py`, run on dev-other only, also produced `m
 
 ![Earlier dev-other model comparison](visuals/model_performance.svg)
 
-The training scripts produce three more charts from train-other-500, saved in `data/`:
+The training scripts produce two more charts from train-other-500, saved in `data/`:
 
 - **Classical model performance** (`classical_model_performance.svg`, from `train_models.py`). The left panel shows each model's 5-fold speaker-grouped CV MAE, with whiskers of ±1 fold standard deviation. All three models beat the mean baseline (0.064). Random Forest is best (0.0562), just ahead of Histogram Gradient Boosting (0.0565), with Ridge at 0.0583. The fold-to-fold spread is about ±0.002, so the three models overlap. The right panel plots Random Forest's predicted WER against actual WER for the unseen test speakers. Test MAE is 0.0588, against 0.0665 for the baseline.
 - **Neural network performance** (`nn_model_performance.svg`, from `train_nn.py`). The same predicted-vs-actual plot for the MLP. Its test MAE is 0.0589, against 0.0665 for the baseline, nearly identical to Random Forest.
-- **Feature ablation** (`ablation_progress.svg`, from `feature_ablation.py`). CV MAE as features are removed. The chart has a single point at 71 features (CV MAE about 0.057 on the 20% speaker subsample). This means no single removal improved CV MAE significantly in the first round, so the ablation stopped right away and kept all 71 features.
 
 ![Classical model CV scores and Random Forest test predictions](data/classical_model_performance.svg)
 ![Neural network test predictions](data/nn_model_performance.svg)
-![Backward feature ablation progress](data/ablation_progress.svg)
 
 In both predicted-vs-actual plots, most predictions are close to the mean: 98% fall between about 0.03 and 0.28, and the median is about 0.06. Actual WER is spread much more widely, with 1% of test clips above 0.5. Phonetic features give a consistent but small improvement over the baseline (about 12% lower MAE), and they don't predict which clips will have very high WER.
 
@@ -70,8 +68,6 @@ Every model predicts a clip's WER from its 71 phonetic features and is compared 
 - Models are compared using 5-fold cross-validation on the training speakers, also grouped by speaker, and ranked by mean absolute error (MAE). We also report RMSE and R².
 - The best model is scored on the held-out speakers only once, after it has been chosen.
 
-**Feature selection:** `feature_ablation.py` runs greedy backward elimination on a 20% sample of the training speakers. Each round, it drops the feature whose removal lowers 10-fold CV MAE the most, and stops when no removal gives a significant improvement. The selected features are then compared with the full set on the held-out speakers.
-
 ### Results & Interpretation
 
 **Cross-validation (5 folds of training speakers, sorted by MAE)**
@@ -92,8 +88,6 @@ Every model predicts a clip's WER from its 71 phonetic features and is compared 
 | Neural network (MLP) | 0.0589 | **0.0990** | **0.323** |
 | Mean baseline | 0.0665 | 0.1204 | -0.001 |
 
-**Feature ablation:** no single feature removal significantly improved CV MAE, so the ablation stopped after the first round and kept all 71 features. None of the phonetic features is clearly redundant or harmful to the model.
-
 **Interpretation:**
 
 - **The project's success criterion is met.** Every model beats the mean baseline on MAE, RMSE and R², in cross-validation and on speakers the models never saw. Random Forest, chosen by CV MAE, lowers test MAE from 0.0665 to 0.0588 (11.6% lower).
@@ -101,7 +95,6 @@ Every model predicts a clip's WER from its 71 phonetic features and is compared 
 - **Nonlinear models help, but only a little.** Random Forest, Gradient Boosting and the MLP all beat Ridge, which suggests some interactions between features. The three nonlinear models are within about one fold standard deviation of each other in CV, so none of them is clearly better.
 - **The MLP is better on large errors.** Its test MAE matches Random Forest, but its RMSE is lower (0.099 vs. 0.108) and its R² higher (0.32 vs. 0.20). RMSE and R² weight large errors more heavily, so the MLP predicts high-WER clips somewhat better. In CV, though, the MLP's R² was slightly lower than Random Forest's (0.163 vs. 0.173), so the test gap may partly reflect which speakers ended up in the single test split. Random Forest remains the model chosen by our protocol: the test set was only used to score it, not to pick it.
 - **Very high WER is still unpredictable.** As the predicted-vs-actual plots show, predictions stay near the mean, while a small number of clips have WER above 0.5.
-
 - **Which features matter:** the dev-other correlations (see Data Visualizations) point to word difficulty (out-of-dictionary words, long words) and clip length as the strongest signals, with common function words linked to fewer errors. We haven't yet computed model-based feature importances (for example, permutation importance on the test speakers). Doing so would show which features the trained models actually rely on.
 
 ## How to Run
@@ -145,7 +138,6 @@ python phonemes.py data/train-other-500_base.en_results.csv data/train-other-500
 python build_features.py data/train-other-500_base.en_processed.csv.gz data/train-other-500_base.en_features.csv.gz
 python train_models.py
 python train_nn.py
-python feature_ablation.py
 ```
 
 | Step | What it does | Output |
@@ -156,7 +148,6 @@ python feature_ablation.py
 | `visualize_data.py` | Plots each feature's correlation with WER on dev-other, with the p < 0.05 significance band, and the distribution of WER | `phoneme_corr.svg`, `feature_corr.svg`, `wer_distribution.svg` |
 | `train_models.py` | Compares a mean baseline, Ridge, Random Forest and Histogram Gradient Boosting with 5-fold cross-validation grouped by speaker, then scores the best model and the baseline once on a held-out set of unseen speakers | `data/classical_cv_scores.csv`, `data/classical_test_scores.csv`, `data/classical_model_performance.svg` |
 | `train_nn.py` | Runs the same cross-validation and held-out test for a neural network (scikit-learn `MLPRegressor`). It is kept separate from `train_models.py` so it can be developed independently | `data/nn_cv_scores.csv`, `data/nn_test_scores.csv`, `data/nn_model_performance.svg` |
-| `feature_ablation.py` | Greedy backward feature selection: drops one feature at a time while doing so significantly improves CV MAE, then compares the selected features with all features on the held-out speakers | `data/ablation_log.csv`, `data/ablation_candidates.csv`, `data/ablation_selected_features.txt`, `data/ablation_test_scores.csv`, `data/ablation_progress.svg` |
 
 `prepare_data.py` is the slowest step. On the full dev-other split it took about 10 minutes on an M4 Max, and it will be much slower on older laptops. It saves a checkpoint (`*.partial.csv`) every 250 clips. The other dev-other steps take about 15 seconds in total. On train-other-500, `phonemes.py` and `build_features.py` take about 30 and 40 seconds on an M4 Max.
 
@@ -166,7 +157,7 @@ Paths ending in `.gz` are compressed, because the uncompressed files would be ov
 
 ### Training scripts
 
-`train_models.py`, `train_nn.py` and `feature_ablation.py` use the same data, split and metrics, so their scores can be compared directly:
+`train_models.py` and `train_nn.py` use the same data, split and metrics, so their scores can be compared directly:
 
 - **Features:** only the 71 phonetic columns (the scalar features below plus every `ph_` and `bi_` column). IDs, `wer`, Whisper outputs and timing columns are never used as inputs.
 - **Split:** 20% of speakers are held out as the test set (`GroupShuffleSplit`, `random_state=42`). No speaker appears in both training and test data.
@@ -174,19 +165,12 @@ Paths ending in `.gz` are compressed, because the uncompressed files would be ov
 - **Metrics:** MAE, RMSE and R². Models are ranked by CV MAE. The held-out test set is scored once, after the model is chosen.
 - **Baseline:** predicts the mean training WER for every clip.
 
-`train_models.py` and `train_nn.py` keep `RANDOM_STATE`, `TEST_SIZE` and `DEFAULT_CV_FOLDS` at the top of each file, and these must stay identical. `feature_ablation.py` imports them, together with the data loader, from `train_models.py`, so keep the two files in the same folder.
+`train_models.py` and `train_nn.py` keep `RANDOM_STATE`, `TEST_SIZE` and `DEFAULT_CV_FOLDS` at the top of each file, and these must stay identical.
 
 | Option | Scripts | Default | Meaning |
 | --- | --- | --- | --- |
-| `--data` | all three | `data/train-other-500_base.en_features.csv.gz`, else the uncompressed `.csv` | Feature file to train on |
-| `--cv-folds` | all three | 5 (10 for `feature_ablation.py`) | Number of speaker-grouped CV folds. Use `--cv-folds 3` for a quicker run, and pass the same value to `train_models.py` and `train_nn.py` when comparing them |
-| `--model` | `feature_ablation.py` | `hgb` | Model used to score features: `hgb` (a lighter Histogram Gradient Boosting) or `ridge` (much faster) |
-| `--subsample-frac` | `feature_ablation.py` | 0.2 | Fraction of training speakers used during ablation. The final comparison uses the full training split |
-| `--min-delta`, `--z` | `feature_ablation.py` | 0.0005, 1.0 | A removal counts only if it lowers mean CV MAE by at least `min-delta` and by more than `z` standard errors of the paired per-fold differences |
-| `--max-rounds`, `--min-features` | `feature_ablation.py` | none, 1 | Optional limits on how many features are removed |
-| `--jobs` | `feature_ablation.py` | -1 (all cores) | Parallel workers across candidate features |
-
-For a fast ablation run, use `python feature_ablation.py --subsample-frac 0.1 --model ridge`.
+| `--data` | both | `data/train-other-500_base.en_features.csv.gz`, else the uncompressed `.csv` | Feature file to train on |
+| `--cv-folds` | both | 5 | Number of speaker-grouped CV folds. Use `--cv-folds 3` for a quicker run, and pass the same value to `train_models.py` and `train_nn.py` when comparing them |
 
 ### Settings
 
@@ -237,7 +221,7 @@ The `train-other-500` CSV records 315,674 errors across 4,858,957 normalized ref
 
 ### Model output files
 
-The training scripts write these to `data/`. Each has one row per model or feature set.
+The training scripts write these to `data/`. Each has one row per model.
 
 | File | Written by | Contents |
 | --- | --- | --- |
@@ -245,10 +229,6 @@ The training scripts write these to `data/`. Each has one row per model or featu
 | `classical_test_scores.csv` | `train_models.py` | MAE, RMSE and R² on the held-out speakers for the best classical model and the baseline |
 | `nn_cv_scores.csv` | `train_nn.py` | The same CV scores for the neural network |
 | `nn_test_scores.csv` | `train_nn.py` | Held-out scores for the neural network and the baseline |
-| `ablation_log.csv` | `feature_ablation.py` | One row per removal round: the feature removed, features left, CV MAE and its standard deviation, and the gain and its standard error |
-| `ablation_candidates.csv` | `feature_ablation.py` | CV MAE without each candidate feature, for every round |
-| `ablation_selected_features.txt` | `feature_ablation.py` | The selected features, one per line |
-| `ablation_test_scores.csv` | `feature_ablation.py` | Held-out scores using all features and using the selected features |
 
 ## Resources
 
